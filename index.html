@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reframe — landscape to portrait</title>
+<style>
+  :root{
+    --bg:#14161a;
+    --panel:#1c1f26;
+    --panel-2:#21252e;
+    --border:#2a2f3a;
+    --border-hi:#3a4150;
+    --text:#e8eaed;
+    --muted:#8b93a1;
+    --muted-2:#646b78;
+    --accent:#ff6b35;      /* signal orange — the encode/REC color */
+    --accent-dim:#c2511f;
+    --ready:#4ade80;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, #1b2030 0%, transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    line-height:1.5;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 22px 64px}
+
+  /* header */
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:26px}
+  .brand h1{font-size:26px;font-weight:650;letter-spacing:-0.02em;margin:0}
+  .brand .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:0.22em;text-transform:uppercase;
+    color:var(--accent);margin:0 0 6px;font-weight:600;
+  }
+  .brand p{color:var(--muted);margin:6px 0 0;font-size:14px;max-width:48ch}
+
+  /* dropzone */
+  .drop{
+    border:1.5px dashed var(--border-hi);border-radius:16px;background:var(--panel);
+    padding:64px 24px;text-align:center;cursor:pointer;transition:border-color .15s, background .15s;
+  }
+  .drop:hover,.drop.hot{border-color:var(--accent);background:var(--panel-2)}
+  .drop .ico{
+    width:54px;height:54px;margin:0 auto 16px;border-radius:14px;display:grid;place-items:center;
+    background:linear-gradient(160deg,#2a2f3a,#1c1f26);border:1px solid var(--border-hi);color:var(--accent);
+  }
+  .drop h2{margin:0 0 6px;font-size:18px;font-weight:600}
+  .drop p{margin:0;color:var(--muted);font-size:13px}
+  .drop .hint{font-family:var(--mono);font-size:11px;color:var(--muted-2);margin-top:14px;letter-spacing:.04em}
+
+  /* editor layout */
+  .editor{display:grid;grid-template-columns:1fr 340px;gap:22px;align-items:start}
+  @media (max-width:900px){.editor{grid-template-columns:1fr}}
+
+  /* stage */
+  .stage-card{background:var(--panel);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+  .stage-bar{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:10px 14px;border-bottom:1px solid var(--border);background:var(--panel-2);
+    font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted);
+  }
+  .stage-bar .fname{color:var(--text);max-width:46ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stage{
+    position:relative;background:
+      repeating-conic-gradient(#16181d 0% 25%, #191c22 0% 50%) 50%/22px 22px;
+    display:grid;place-items:center;min-height:300px;user-select:none;touch-action:none;
+  }
+  .stage video{display:block;max-width:100%;max-height:62vh}
+  /* crop overlay */
+  .ov{position:absolute;inset:0;pointer-events:none}
+  .scrim{position:absolute;background:rgba(10,11,14,.62)}
+  .crop{
+    position:absolute;border:1.5px solid var(--accent);box-shadow:0 0 0 1px rgba(0,0,0,.35);
+    pointer-events:auto;cursor:move;
+  }
+  .crop.locked{cursor:default}
+  .crop .thirds{position:absolute;inset:0;pointer-events:none;opacity:.5}
+  .crop .thirds span{position:absolute;background:rgba(255,255,255,.35)}
+  .crop .thirds .v1{left:33.33%;top:0;bottom:0;width:1px}
+  .crop .thirds .v2{left:66.66%;top:0;bottom:0;width:1px}
+  .crop .thirds .h1{top:33.33%;left:0;right:0;height:1px}
+  .crop .thirds .h2{top:66.66%;left:0;right:0;height:1px}
+  .h{position:absolute;width:14px;height:14px;background:var(--accent);border:2px solid #1a1c22;border-radius:3px;pointer-events:auto}
+  .crop.locked .h{display:none}
+  .h.nw{left:-7px;top:-7px;cursor:nwse-resize}
+  .h.ne{right:-7px;top:-7px;cursor:nesw-resize}
+  .h.sw{left:-7px;bottom:-7px;cursor:nesw-resize}
+  .h.se{right:-7px;bottom:-7px;cursor:nwse-resize}
+  .dim-badge{
+    position:absolute;top:8px;left:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;
+    background:rgba(10,11,14,.78);color:var(--text);padding:3px 7px;border-radius:6px;border:1px solid var(--border-hi);
+    pointer-events:none;white-space:nowrap;
+  }
+  /* REC badge while exporting */
+  .rec{
+    position:absolute;top:8px;right:8px;display:none;align-items:center;gap:6px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:#fff;
+    background:rgba(10,11,14,.8);padding:4px 9px;border-radius:20px;border:1px solid var(--accent);
+  }
+  .rec.on{display:flex}
+  .rec .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:blink 1s steps(2,end) infinite}
+  @keyframes blink{50%{opacity:.25}}
+
+  .scrub{display:flex;align-items:center;gap:12px;padding:11px 14px;border-top:1px solid var(--border);background:var(--panel-2)}
+  .scrub button{
+    width:34px;height:34px;border-radius:9px;border:1px solid var(--border-hi);background:var(--panel);
+    color:var(--text);cursor:pointer;display:grid;place-items:center;flex:0 0 auto
+  }
+  .scrub button:hover{border-color:var(--accent)}
+  .scrub input[type=range]{flex:1;accent-color:var(--accent)}
+  .scrub .t{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:84px;text-align:right}
+
+  /* controls panel */
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:18px}
+  .panel + .panel{margin-top:16px}
+  .label{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--muted);margin:0 0 10px;font-weight:600
+  }
+  .ratios{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .ratios button, .seg button{
+    border:1px solid var(--border-hi);background:var(--panel-2);color:var(--text);
+    border-radius:10px;padding:9px 6px;cursor:pointer;font-size:12.5px;transition:.12s;
+    display:flex;flex-direction:column;align-items:center;gap:3px;line-height:1.2
+  }
+  .ratios button .sub{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);letter-spacing:.03em}
+  .ratios button:hover, .seg button:hover{border-color:var(--accent)}
+  .ratios button[aria-pressed=true], .seg button[aria-pressed=true]{
+    border-color:var(--accent);background:rgba(255,107,53,.12);color:#fff
+  }
+  .ratios button[aria-pressed=true] .sub{color:var(--accent)}
+
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .seg button{flex-direction:row;justify-content:center;padding:9px}
+
+  select{
+    width:100%;background:var(--panel-2);color:var(--text);border:1px solid var(--border-hi);
+    border-radius:10px;padding:10px 12px;font-size:13px;font-family:var(--sans);cursor:pointer;
+    appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b93a1' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center
+  }
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .field .label{margin-bottom:7px}
+
+  .btn-primary{
+    width:100%;margin-top:4px;border:none;border-radius:11px;padding:13px;cursor:pointer;
+    font-size:14px;font-weight:600;color:#fff;
+    background:linear-gradient(180deg,var(--accent),var(--accent-dim));
+    box-shadow:0 6px 18px -8px var(--accent);transition:.15s
+  }
+  .btn-primary:hover{filter:brightness(1.06)}
+  .btn-primary:disabled{opacity:.5;cursor:not-allowed;filter:none;box-shadow:none}
+  .btn-ghost{
+    width:100%;margin-top:9px;border:1px solid var(--border-hi);border-radius:11px;padding:11px;cursor:pointer;
+    font-size:13px;color:var(--muted);background:transparent
+  }
+  .btn-ghost:hover{border-color:var(--accent);color:var(--text)}
+
+  .progress{margin-top:14px;display:none}
+  .progress.on{display:block}
+  .bar{height:8px;border-radius:6px;background:var(--panel-2);overflow:hidden;border:1px solid var(--border)}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),#ffb088);transition:width .2s}
+  .progress .pl{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:7px}
+
+  .result{display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px}
+  .result.on{display:block}
+  .result video{width:100%;border-radius:10px;border:1px solid var(--border);background:#000;max-height:280px}
+  .result a.dl{
+    display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;text-decoration:none;
+    background:var(--ready);color:#0c1f12;font-weight:650;border-radius:11px;padding:12px;font-size:14px
+  }
+  .result a.dl:hover{filter:brightness(1.05)}
+  .meta{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:9px;line-height:1.7}
+
+  .note{font-size:12px;color:var(--muted);line-height:1.6;margin:12px 0 0}
+  .note b{color:var(--text);font-weight:600}
+  .err{display:none;margin-top:12px;font-size:12.5px;color:#ffb4a0;background:rgba(255,107,53,.08);
+       border:1px solid var(--accent-dim);border-radius:10px;padding:10px 12px}
+  .err.on{display:block}
+
+  .footer{margin-top:34px;font-family:var(--mono);font-size:11px;color:var(--muted-2);letter-spacing:.04em;text-align:center}
+  a.lnk{color:var(--muted)}
+
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <p class="eyebrow">Reframe</p>
+      <h1>Landscape&nbsp;→&nbsp;Portrait, in&nbsp;the&nbsp;browser</h1>
+      <p>Crop, reframe and export vertical clips for Shorts, Reels, TikTok and X. Everything runs locally on your machine — no upload, no server, nothing leaves the page.</p>
+    </div>
+  </header>
+
+  <!-- Upload -->
+  <div id="dropzone" class="drop" tabindex="0" role="button" aria-label="Choose a video file">
+    <div class="ico">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
+      </svg>
+    </div>
+    <h2>Drop a video, or click to choose</h2>
+    <p>Pick the landscape clip you want to reframe.</p>
+    <div class="hint">MP4 · MOV · WEBM · MKV — processed on-device</div>
+    <input id="file" type="file" accept="video/*" class="hidden" />
+  </div>
+
+  <!-- Editor -->
+  <div id="editor" class="editor hidden">
+    <!-- Stage -->
+    <div class="stage-card">
+      <div class="stage-bar">
+        <span class="fname" id="fname">clip.mp4</span>
+        <span id="srcinfo">—</span>
+      </div>
+      <div class="stage" id="stage">
+        <video id="video" playsinline muted></video>
+        <div class="ov" id="overlay">
+          <div class="scrim" id="sTop"></div>
+          <div class="scrim" id="sBottom"></div>
+          <div class="scrim" id="sLeft"></div>
+          <div class="scrim" id="sRight"></div>
+          <div class="crop" id="crop">
+            <div class="thirds"><span class="v1"></span><span class="v2"></span><span class="h1"></span><span class="h2"></span></div>
+            <div class="h nw" data-h="nw"></div>
+            <div class="h ne" data-h="ne"></div>
+            <div class="h sw" data-h="sw"></div>
+            <div class="h se" data-h="se"></div>
+          </div>
+        </div>
+        <div class="dim-badge" id="dimBadge">—</div>
+        <div class="rec" id="rec"><span class="dot"></span>ENCODING</div>
+      </div>
+      <div class="scrub">
+        <button id="play" aria-label="Play / pause">
+          <svg id="playIco" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek" />
+        <span class="t" id="time">0:00 / 0:00</span>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div>
+      <div class="panel">
+        <p class="label">Aspect ratio</p>
+        <div class="ratios" id="ratios">
+          <button data-w="9"  data-h="16" aria-pressed="true">9:16<span class="sub">Reels / TikTok</span></button>
+          <button data-w="4"  data-h="5">4:5<span class="sub">Feed</span></button>
+          <button data-w="1"  data-h="1">1:1<span class="sub">Square</span></button>
+          <button data-w="3"  data-h="4">3:4<span class="sub">Portrait</span></button>
+          <button data-w="4"  data-h="3">4:3<span class="sub">Classic</span></button>
+          <button data-w="0"  data-h="0">Original<span class="sub">Source</span></button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="label">Reframe mode</p>
+        <div class="seg" id="modeSeg">
+          <button data-mode="crop" aria-pressed="true">Crop</button>
+          <button data-mode="blur">Fit + blur</button>
+        </div>
+        <p class="note" id="modeNote"><b>Crop:</b> drag the box to choose exactly which part of the frame to keep.</p>
+      </div>
+
+      <div class="panel">
+        <p class="label">Output</p>
+        <div class="row2">
+          <div class="field">
+            <p class="label">Resolution</p>
+            <select id="res">
+              <option value="0">Match source</option>
+              <option value="1080">Up to 1080p</option>
+              <option value="720">Up to 720p</option>
+            </select>
+          </div>
+          <div class="field">
+            <p class="label">Quality</p>
+            <select id="quality">
+              <option value="0.25">Max</option>
+              <option value="0.13" selected>High</option>
+              <option value="0.07">Balanced</option>
+            </select>
+          </div>
+        </div>
+        <button id="export" class="btn-primary">Export portrait clip</button>
+        <button id="reset" class="btn-ghost">Reset crop</button>
+        <button id="newfile" class="btn-ghost">Use a different video</button>
+
+        <div class="progress" id="progress">
+          <div class="bar"><i id="barFill"></i></div>
+          <div class="pl"><span id="plLabel">Encoding…</span><span id="plPct">0%</span></div>
+        </div>
+
+        <div class="err" id="err"></div>
+
+        <div class="result" id="result">
+          <video id="outVideo" controls playsinline></video>
+          <a class="dl" id="dl" download>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12M12 16l-4-4M12 16l4-4"/><path d="M4 20h16"/></svg>
+            Download
+          </a>
+          <div class="meta" id="outMeta"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer">Runs 100% in your browser · drop the file into a GitHub Pages repo and it just works</p>
+</div>
+
+<canvas id="canvas" class="hidden"></canvas>
+
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const dropzone=$("dropzone"), fileInput=$("file"), editor=$("editor");
+  const video=$("video"), stage=$("stage"), overlay=$("overlay"), cropEl=$("crop");
+  const sTop=$("sTop"),sBottom=$("sBottom"),sLeft=$("sLeft"),sRight=$("sRight");
+  const dimBadge=$("dimBadge"), recBadge=$("rec");
+  const playBtn=$("play"), playIco=$("playIco"), seek=$("seek"), timeEl=$("time");
+  const ratiosBox=$("ratios"), modeSeg=$("modeSeg"), modeNote=$("modeNote");
+  const resSel=$("res"), qualitySel=$("quality");
+  const exportBtn=$("export"), resetBtn=$("reset"), newBtn=$("newfile");
+  const progress=$("progress"), barFill=$("barFill"), plLabel=$("plLabel"), plPct=$("plPct");
+  const result=$("result"), outVideo=$("outVideo"), dl=$("dl"), outMeta=$("outMeta"), errBox=$("err");
+  const fnameEl=$("fname"), srcInfo=$("srcinfo"), dimBadgeEl=$("dimBadge");
+  const canvas=$("canvas"), ctx=canvas.getContext("2d");
+
+  // ---- state ----
+  let ratio={w:9,h:16};        // {0,0} => original
+  let mode="crop";
+  let srcW=0, srcH=0;          // intrinsic video pixels
+  let crop={x:0,y:0,w:0,h:0};  // in source-pixel space
+  let dispScale=1, dispOffX=0, dispOffY=0; // map source px -> stage px
+  let fileName="clip.mp4";
+  let recording=false;
+  let lastUrl=null;
+
+  // ---------- file handling ----------
+  dropzone.addEventListener("click",()=>fileInput.click());
+  dropzone.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fileInput.click();}});
+  ["dragover","dragenter"].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.add("hot");}));
+  ["dragleave","drop"].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.remove("hot");}));
+  dropzone.addEventListener("drop",e=>{const f=e.dataTransfer.files[0]; if(f) loadFile(f);});
+  fileInput.addEventListener("change",e=>{const f=e.target.files[0]; if(f) loadFile(f);});
+  newBtn.addEventListener("click",()=>{ resetUI(); });
+
+  function loadFile(f){
+    if(!f.type.startsWith("video/")){ showErr("That doesn't look like a video file."); return; }
+    hideErr();
+    fileName=f.name; fnameEl.textContent=f.name;
+    if(lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl=URL.createObjectURL(f);
+    video.src=lastUrl;
+    video.onloadedmetadata=()=>{
+      srcW=video.videoWidth; srcH=video.videoHeight;
+      srcInfo.textContent=`${srcW}×${srcH}`;
+      dropzone.classList.add("hidden");
+      editor.classList.remove("hidden");
+      result.classList.remove("on");
+      applyRatio(true);
+      requestAnimationFrame(layout);
+    };
+    video.onloadeddata=()=>{ video.currentTime=Math.min(0.1, (video.duration||1)*0.02); };
+  }
+
+  function resetUI(){
+    video.pause(); video.removeAttribute("src"); video.load();
+    if(lastUrl){URL.revokeObjectURL(lastUrl); lastUrl=null;}
+    editor.classList.add("hidden"); dropzone.classList.remove("hidden");
+    fileInput.value=""; result.classList.remove("on"); progress.classList.remove("on");
+  }
+
+  // ---------- ratio + crop geometry ----------
+  function fitRatioRect(rw,rh,W,H){
+    // largest rw:rh rect centered inside W×H
+    if(rw===0){ return {x:0,y:0,w:W,h:H}; }
+    let w=W, h=W*rh/rw;
+    if(h>H){ h=H; w=H*rw/rh; }
+    return {x:(W-w)/2, y:(H-h)/2, w, h};
+  }
+  function applyRatio(recenter){
+    if(ratio.w===0){ crop={x:0,y:0,w:srcW,h:srcH}; }
+    else {
+      if(recenter || mode!=="crop"){ crop=fitRatioRect(ratio.w,ratio.h,srcW,srcH); }
+      else {
+        // keep center, re-fit to new ratio within bounds
+        const cx=crop.x+crop.w/2, cy=crop.y+crop.h/2;
+        let r=fitRatioRect(ratio.w,ratio.h,srcW,srcH);
+        // scale down r to current size feel: keep r as max then place around center, clamp
+        crop={...r};
+        crop.x=clamp(cx-crop.w/2,0,srcW-crop.w);
+        crop.y=clamp(cy-crop.h/2,0,srcH-crop.h);
+      }
+    }
+    updateOverlay();
+  }
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+  // ---------- layout (source px <-> stage px) ----------
+  function layout(){
+    if(!srcW) return;
+    const vr=video.getBoundingClientRect();
+    const sr=stage.getBoundingClientRect();
+    dispScale=vr.width/srcW;
+    dispOffX=vr.left-sr.left;
+    dispOffY=vr.top-sr.top;
+    updateOverlay();
+  }
+  window.addEventListener("resize",layout);
+
+  function updateOverlay(){
+    if(!srcW) return;
+    const x=dispOffX+crop.x*dispScale, y=dispOffY+crop.y*dispScale;
+    const w=crop.w*dispScale, h=crop.h*dispScale;
+    const original = ratio.w===0;
+    const blur = mode==="blur";
+    cropEl.style.display = (blur)?"none":"block";
+    [sTop,sBottom,sLeft,sRight].forEach(s=>s.style.display=(blur)?"none":"block");
+    cropEl.classList.toggle("locked", original);
+    if(!blur){
+      cropEl.style.left=x+"px"; cropEl.style.top=y+"px";
+      cropEl.style.width=w+"px"; cropEl.style.height=h+"px";
+      const vw=srcW*dispScale, vh=srcH*dispScale;
+      sTop.style.left=dispOffX+"px"; sTop.style.top=dispOffY+"px"; sTop.style.width=vw+"px"; sTop.style.height=(y-dispOffY)+"px";
+      sBottom.style.left=dispOffX+"px"; sBottom.style.top=(y+h)+"px"; sBottom.style.width=vw+"px"; sBottom.style.height=(dispOffY+vh-(y+h))+"px";
+      sLeft.style.left=dispOffX+"px"; sLeft.style.top=y+"px"; sLeft.style.width=(x-dispOffX)+"px"; sLeft.style.height=h+"px";
+      sRight.style.left=(x+w)+"px"; sRight.style.top=y+"px"; sRight.style.width=(dispOffX+vw-(x+w))+"px"; sRight.style.height=h+"px";
+    }
+    // output dim badge
+    const out=outputDims();
+    dimBadge.textContent = `OUT ${out.w}×${out.h}`;
+  }
+
+  // ---------- crop drag / resize ----------
+  let drag=null;
+  cropEl.addEventListener("pointerdown",e=>{
+    if(ratio.w===0||mode==="blur") return;
+    if(e.target.classList.contains("h")) return; // handled below
+    drag={type:"move", sx:e.clientX, sy:e.clientY, ox:crop.x, oy:crop.y};
+    cropEl.setPointerCapture(e.pointerId);
+  });
+  cropEl.querySelectorAll(".h").forEach(hd=>{
+    hd.addEventListener("pointerdown",e=>{
+      if(ratio.w===0||mode==="blur") return;
+      e.stopPropagation();
+      drag={type:"resize", corner:hd.dataset.h, sx:e.clientX, sy:e.clientY, start:{...crop}};
+      hd.setPointerCapture(e.pointerId);
+    });
+  });
+  document.addEventListener("pointermove",e=>{
+    if(!drag) return;
+    const dx=(e.clientX-drag.sx)/dispScale, dy=(e.clientY-drag.sy)/dispScale;
+    if(drag.type==="move"){
+      crop.x=clamp(drag.ox+dx,0,srcW-crop.w);
+      crop.y=clamp(drag.oy+dy,0,srcH-crop.h);
+    } else {
+      resizeCrop(drag.corner, dx, dy, drag.start);
+    }
+    updateOverlay();
+  });
+  document.addEventListener("pointerup",()=>{drag=null;});
+
+  function resizeCrop(corner,dx,dy,start){
+    const ar = ratio.w/ratio.h; // w/h
+    // anchor = opposite corner stays fixed
+    let ax,ay; // anchor in source px
+    if(corner==="nw"){ax=start.x+start.w; ay=start.y+start.h;}
+    if(corner==="ne"){ax=start.x;         ay=start.y+start.h;}
+    if(corner==="sw"){ax=start.x+start.w; ay=start.y;}
+    if(corner==="se"){ax=start.x;         ay=start.y;}
+    // current dragged corner position
+    let cx = (corner==="nw"||corner==="sw") ? start.x+dx : start.x+start.w+dx;
+    let cy = (corner==="nw"||corner==="ne") ? start.y+dy : start.y+start.h+dy;
+    cx=clamp(cx,0,srcW); cy=clamp(cy,0,srcH);
+    let w=Math.abs(cx-ax), h=Math.abs(cy-ay);
+    // lock ratio: derive from the larger drag axis
+    if(w/ h > ar){ h=w/ar; } else { w=h*ar; }
+    const minW=40;
+    if(w<minW){ w=minW; h=w/ar; }
+    // place rect with anchor fixed
+    let nx = (corner==="nw"||corner==="sw") ? ax-w : ax;
+    let ny = (corner==="nw"||corner==="ne") ? ay-h : ay;
+    // clamp into bounds, shrinking if needed
+    if(nx<0){ const over=-nx; w-=over; h=w/ar; nx=0; if(corner==="nw"||corner==="ne") ny=ay-h; }
+    if(ny<0){ const over=-ny; h-=over; w=h*ar; ny=0; if(corner==="nw"||corner==="sw") nx=ax-w; }
+    if(nx+w>srcW){ w=srcW-nx; h=w/ar; if(corner==="nw"||corner==="ne") ny=ay-h; }
+    if(ny+h>srcH){ h=srcH-ny; w=h*ar; if(corner==="nw"||corner==="sw") nx=ax-w; }
+    crop={x:clamp(nx,0,srcW-w),y:clamp(ny,0,srcH-h),w,h};
+  }
+
+  // ---------- ratio buttons ----------
+  ratiosBox.querySelectorAll("button").forEach(b=>{
+    b.addEventListener("click",()=>{
+      ratiosBox.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));
+      b.setAttribute("aria-pressed","true");
+      ratio={w:+b.dataset.w, h:+b.dataset.h};
+      applyRatio(true);
+    });
+  });
+  modeSeg.querySelectorAll("button").forEach(b=>{
+    b.addEventListener("click",()=>{
+      modeSeg.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));
+      b.setAttribute("aria-pressed","true");
+      mode=b.dataset.mode;
+      modeNote.innerHTML = mode==="crop"
+        ? "<b>Crop:</b> drag the box to choose exactly which part of the frame to keep."
+        : "<b>Fit + blur:</b> the whole frame is centered with a blurred fill behind it — nothing gets cut off.";
+      applyRatio(true);
+    });
+  });
+  resSel.addEventListener("change",updateOverlay);
+  resetBtn.addEventListener("click",()=>applyRatio(true));
+
+  // ---------- output dims ----------
+  function evenly(n){ n=Math.round(n); return n%2? n+1:n; }
+  function outputDims(){
+    let ow, oh;
+    if(mode==="blur"){
+      // canvas matches the chosen ratio; size from a base width
+      const ar = ratio.w===0 ? srcW/srcH : ratio.w/ratio.h;
+      // base the portrait width on source short side
+      let baseW = ar<=1 ? Math.min(srcW,srcH) : srcW; // portrait => width is short side
+      if(ar>=1){ // landscape/square output
+        oh = Math.min(srcH, srcW/ar>srcH?srcH: srcH);
+      }
+      // simpler: fix the smaller dimension to source-derived, then apply cap
+      // build from height = source height (keeps vertical detail), width = h*ar, but cap width to source-ish
+      let h = srcH, w = h*ar;
+      ow=w; oh=h;
+    } else {
+      ow=crop.w; oh=crop.h;
+    }
+    // apply resolution cap (never upscale)
+    const cap=+resSel.value;
+    if(cap>0){
+      // cap the SHORTER side to `cap` (so 1080 => 1080 wide portrait)
+      const shorter=Math.min(ow,oh);
+      if(shorter>cap){ const k=cap/shorter; ow*=k; oh*=k; }
+    }
+    return {w:Math.max(2,evenly(ow)), h:Math.max(2,evenly(oh))};
+  }
+
+  // ---------- playback / scrub ----------
+  playBtn.addEventListener("click",()=>{ video.paused?video.play():video.pause(); });
+  video.addEventListener("play",()=>{ if(!recording) playIco.innerHTML='<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>'; });
+  video.addEventListener("pause",()=>{ if(!recording) playIco.innerHTML='<path d="M8 5v14l11-7z"/>'; });
+  video.addEventListener("timeupdate",()=>{
+    if(recording) return;
+    if(video.duration){ seek.value=String(Math.round(video.currentTime/video.duration*1000)); }
+    timeEl.textContent=`${fmt(video.currentTime)} / ${fmt(video.duration||0)}`;
+  });
+  seek.addEventListener("input",()=>{ if(video.duration) video.currentTime=(+seek.value/1000)*video.duration; });
+  function fmt(s){ s=Math.max(0,s||0); const m=Math.floor(s/60), ss=Math.floor(s%60); return `${m}:${String(ss).padStart(2,"0")}`; }
+
+  // ---------- drawing a frame to the export canvas ----------
+  function drawFrame(out){
+    if(mode==="blur"){
+      // cover (blurred) then contain (sharp)
+      const cw=out.w, ch=out.h;
+      // cover
+      const scaleCover=Math.max(cw/srcW, ch/srcH);
+      const bw=srcW*scaleCover, bh=srcH*scaleCover;
+      ctx.save();
+      ctx.filter="blur(28px) brightness(0.7)";
+      ctx.drawImage(video,(cw-bw)/2,(ch-bh)/2,bw,bh);
+      ctx.restore();
+      // contain
+      const scaleFit=Math.min(cw/srcW, ch/srcH);
+      const fw=srcW*scaleFit, fh=srcH*scaleFit;
+      ctx.drawImage(video,(cw-fw)/2,(ch-fh)/2,fw,fh);
+    } else {
+      ctx.drawImage(video, crop.x,crop.y,crop.w,crop.h, 0,0,out.w,out.h);
+    }
+  }
+
+  // ---------- export ----------
+  function pickMime(){
+    const cands=[
+      'video/mp4;codecs="avc1.640028"',
+      'video/mp4;codecs=avc1',
+      'video/mp4',
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm'
+    ];
+    for(const c of cands){ if(window.MediaRecorder && MediaRecorder.isTypeSupported(c)) return c; }
+    return "";
+  }
+
+  exportBtn.addEventListener("click",async ()=>{
+    if(recording) return;
+    if(!window.MediaRecorder){ showErr("Your browser doesn't support in-browser recording. Try Chrome or Edge."); return; }
+    hideErr(); result.classList.remove("on");
+    const out=outputDims();
+    canvas.width=out.w; canvas.height=out.h;
+
+    const mime=pickMime();
+    if(!mime){ showErr("No supported video encoder found in this browser."); return; }
+    const ext = mime.startsWith("video/mp4")?"mp4":"webm";
+
+    // bitrate from bits-per-pixel-per-frame estimate
+    const fps = 30;
+    const bpp = +qualitySel.value;
+    const bitrate = Math.round(clamp(out.w*out.h*fps*bpp, 3_000_000, 60_000_000));
+
+    // streams: canvas video + source audio
+    const canvasStream = canvas.captureStream(0);
+    const vTrack = canvasStream.getVideoTracks()[0];
+    let audioTracks=[];
+    try{
+      const vs = video.captureStream ? video.captureStream() : (video.mozCaptureStream&&video.mozCaptureStream());
+      if(vs) audioTracks = vs.getAudioTracks();
+    }catch(_){}
+    const mixed = new MediaStream([vTrack, ...audioTracks]);
+
+    let rec;
+    try{
+      rec = new MediaRecorder(mixed, {mimeType:mime, videoBitsPerSecond:bitrate});
+    }catch(e){
+      try{ rec = new MediaRecorder(mixed, {mimeType:mime}); }
+      catch(e2){ showErr("Couldn't start the encoder: "+e2.message); return; }
+    }
+
+    const chunks=[];
+    rec.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+
+    const finish=()=>{
+      const blob=new Blob(chunks,{type:mime.split(";")[0]});
+      const url=URL.createObjectURL(blob);
+      outVideo.src=url; dl.href=url;
+      const base=fileName.replace(/\.[^.]+$/,"");
+      dl.download=`${base}_${ratio.w===0?"original":ratio.w+"x"+ratio.h}.${ext}`;
+      outMeta.textContent=`${out.w}×${out.h} · ${ext.toUpperCase()} · ${(blob.size/1048576).toFixed(1)} MB · ${Math.round(bitrate/1e6)} Mbps target`;
+      result.classList.add("on");
+      endRec();
+    };
+    rec.onstop=finish;
+
+    // begin
+    recording=true;
+    recBadge.classList.add("on");
+    exportBtn.disabled=true; exportBtn.textContent="Encoding…";
+    progress.classList.add("on"); setProg(0,"Encoding…");
+    playIco.innerHTML='<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+
+    video.pause();
+    video.currentTime=0;
+    await new Promise(r=>{ const f=()=>{video.removeEventListener("seeked",f); r();}; video.addEventListener("seeked",f); });
+
+    rec.start(250);
+    video.muted=true;
+    try{ await video.play(); }catch(e){ showErr("Couldn't start playback for encoding."); endRec(); return; }
+
+    const useRVFC = "requestVideoFrameCallback" in HTMLVideoElement.prototype;
+    const dur=video.duration||0;
+
+    function step(){
+      if(!recording) return;
+      drawFrame(out);
+      try{ vTrack.requestFrame(); }catch(_){}
+      const pct=dur?clamp(video.currentTime/dur,0,1):0;
+      setProg(pct*100,"Encoding…");
+      if(video.ended){ stopRec(); return; }
+      if(useRVFC) video.requestVideoFrameCallback(step);
+      else requestAnimationFrame(step);
+    }
+    if(useRVFC) video.requestVideoFrameCallback(step); else requestAnimationFrame(step);
+
+    video.onended=()=>stopRec();
+
+    function stopRec(){
+      if(rec && rec.state!=="inactive"){ try{ rec.stop(); }catch(_){} }
+    }
+  });
+
+  function endRec(){
+    recording=false;
+    recBadge.classList.remove("on");
+    exportBtn.disabled=false; exportBtn.textContent="Export portrait clip";
+    setProg(100,"Done");
+    setTimeout(()=>progress.classList.remove("on"),900);
+    video.onended=null; video.muted=true; playIco.innerHTML='<path d="M8 5v14l11-7z"/>';
+  }
+  function setProg(p,label){ barFill.style.width=p.toFixed(0)+"%"; plPct.textContent=Math.round(p)+"%"; if(label)plLabel.textContent=label; }
+
+  function showErr(m){ errBox.textContent=m; errBox.classList.add("on"); }
+  function hideErr(){ errBox.classList.remove("on"); }
+
+  // keep overlay aligned as the video lays out / scrolls
+  const ro=new ResizeObserver(()=>layout()); ro.observe(stage);
+  video.addEventListener("loadeddata",()=>requestAnimationFrame(layout));
+})();
+</script>
+</body>
+</html>
